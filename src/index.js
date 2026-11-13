@@ -60,8 +60,7 @@ const CMP_ROWS = [
   ['Eigenkapital ohne Minderheiten (Mio.)', (r) => num(r.equity, 1)],
   ['Anzahl Aktien (Mio.)', (r) => num(r.shares_mio, 3)],
   ['NAV je Aktie berechnet (EK / Aktien, CHF)', (r) => num(r.nav_ps_calc, 2)],
-  ['Agio / Disagio auf NAV', (r) => pct(r.agio_pct)],
-  ['Kurs / NAV', (r) => num(r.price_to_nav, 2)],
+  ['Agio auf NAV', (r) => pct(r.agio_pct)],
   ['Ausschüttungsrendite', (r) => pct(r.dividend_yield_pct, 2)],
 ];
 
@@ -74,13 +73,13 @@ const FIN_ROWS = [
 ];
 
 async function home(env) {
-  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.price_to_nav,v.agio_pct,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (c.status='active') DESC, c.short_name`);
+  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.agio_pct,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (c.status='active') DESC, c.short_name`);
   const body = rows
-    .map((r) => `<tr><td><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td><td>${num(r.portfolio_value, 0)}</td><td>${pct(r.ltv_pct)}</td><td>${pct(r.avg_interest_rate_pct, 2)}</td><td>${num(r.price_to_nav, 2)}</td><td>${pct(r.agio_pct)}</td><td>${pct(r.dividend_yield_pct, 2)}</td></tr>`)
+    .map((r) => `<tr><td><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td><td>${num(r.portfolio_value, 0)}</td><td>${pct(r.ltv_pct)}</td><td>${pct(r.avg_interest_rate_pct, 2)}</td><td>${pct(r.agio_pct)}</td><td>${pct(r.dividend_yield_pct, 2)}</td></tr>`)
     .join('');
   const latest = await all(env, `SELECT n.published_date d,n.title t,n.category c,n.company_id i,c.short_name s FROM news n JOIN company c ON c.id=n.company_id ORDER BY n.published_date DESC LIMIT 6`);
   return layout('Übersicht', 'home', `<h1>Schweizer Immobiliengesellschaften</h1><p class="sub">${rows.length} Gesellschaften, ${rows.filter((r) => r.status === 'active').length} mit Daten</p>
-<div class="card scroll"><table><tr><th>Gesellschaft</th><th>Portfolio Mio.</th><th>LTV</th><th>Zins</th><th>P/NAV</th><th>Agio</th><th>Rendite</th></tr>${body}</table></div>
+<div class="card scroll"><table><tr><th>Gesellschaft</th><th>Portfolio Mio.</th><th>LTV</th><th>Zins</th><th>Agio</th><th>Rendite</th></tr>${body}</table></div>
 <h2>Neueste News</h2><div class="card news">${latest.map((x) => `<p><span class="d">${dt(x.d)}</span> <span class="tag">${esc(x.c)}</span><a href="/profil/${x.i}">${esc(x.s)}</a>: ${esc(x.t)}</p>`).join('')}</div>`);
 }
 
