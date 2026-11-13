@@ -81,7 +81,10 @@ CREATE TABLE IF NOT EXISTS auditor (
   company_id INTEGER NOT NULL REFERENCES company(id) ON DELETE CASCADE,
   fiscal_year INTEGER NOT NULL,
   audit_firm TEXT, firm_since INTEGER, lead_auditor TEXT, lead_auditor_since_fy INTEGER,
-  audit_fees REAL, non_audit_fees REAL, non_audit_services TEXT, last_tender_year INTEGER,
+  audit_fees REAL, non_audit_fees REAL, non_audit_fees_approx TEXT, non_audit_services TEXT, last_tender_year INTEGER,
   source TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now')),
   UNIQUE (company_id, fiscal_year)
 );
+
+CREATE VIEW IF NOT EXISTS v_auditor_latest AS
+SELECT a.* FROM auditor a WHERE a.fiscal_year = (SELECT MAX(x.fiscal_year) FROM auditor x WHERE x.company_id = a.company_id);

@@ -25,6 +25,7 @@ button{font:inherit;padding:6px 14px;border:1px solid var(--bd);border-radius:8p
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (v, d = 1) => (v === null || v === undefined || v === '' ? '–' : Number(v).toLocaleString('de-CH', { minimumFractionDigits: d, maximumFractionDigits: d }));
 const pct = (v, d = 1) => (v === null || v === undefined ? '–' : num(v, d) + ' %');
+const nonAudit = (r) => (r.non_audit_fees != null ? num(r.non_audit_fees, 2) : r.non_audit_fees_approx ? esc(r.non_audit_fees_approx) : '–');
 const dt = (s) => (s ? String(s).slice(0, 10).split('-').reverse().join('.') : '–');
 
 function layout(title, active, body, status = 200) {
@@ -53,6 +54,12 @@ const CMP_ROWS = [
   ['Ø Zinssatz', (r) => pct(r.avg_interest_rate_pct, 2)],
   ['Eigenkapitalquote', (r) => pct(r.equity_ratio_pct)],
   ['Leerstand', (r) => pct(r.vacancy_rate_pct)],
+  ['Revisionsstelle', (r) => esc(r.audit_firm ?? '–')],
+  ['Revisionsstelle seit', (r) => esc(r.firm_since ?? '–')],
+  ['Leitender Revisor', (r) => esc(r.lead_auditor ?? '–')],
+  ['Leitender Revisor verantwortlich seit GJ', (r) => esc(r.lead_auditor_since_fy ?? '–')],
+  ['Revisionshonorar (Mio.)', (r) => num(r.audit_fees, 2)],
+  ['Honorar Non-Audit-Services (Mio.)', (r) => nonAudit(r)],
   ['Nettorendite (EPRA)', (r) => pct(r.net_yield_epra_pct)],
   ['WALT (Jahre)', (r) => num(r.walt_years, 1)],
   ['NAV je Aktie (CHF)', (r) => num(r.epra_nav_ps, 2)],
@@ -82,14 +89,14 @@ h.cells[i].textContent+=up?' ▲':' ▼';}
 for(var i=0;i<h.cells.length;i++)(function(i){h.cells[i].style.cursor='pointer';h.cells[i].onclick=function(){sort(i)}})(i);})();`;
 
 async function home(env) {
-  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.agio_pct,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (v.portfolio_value IS NULL), v.portfolio_value DESC, c.short_name`);
+  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.agio_pct,v.dividend_yield_pct,a.audit_firm,a.lead_auditor,a.audit_fees,a.non_audit_fees,a.non_audit_fees_approx,a.fiscal_year AS audit_fy FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name LEFT JOIN v_auditor_latest a ON a.company_id=c.id ORDER BY (v.portfolio_value IS NULL), v.portfolio_value DESC, c.short_name`);
   const cell = (v, f) => `<td data-v="${v ?? ''}">${f}</td>`;
   const body = rows
-    .map((r) => `<tr><td data-v="${esc(r.short_name)}"><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td>${cell(r.portfolio_value, num(r.portfolio_value, 0))}${cell(r.ltv_pct, pct(r.ltv_pct))}${cell(r.avg_interest_rate_pct, pct(r.avg_interest_rate_pct, 2))}${cell(r.agio_pct, pct(r.agio_pct))}${cell(r.dividend_yield_pct, pct(r.dividend_yield_pct, 2))}</tr>`)
+    .map((r) => `<tr><td data-v="${esc(r.short_name)}"><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td>${cell(r.portfolio_value, num(r.portfolio_value, 0))}${cell(r.ltv_pct, pct(r.ltv_pct))}${cell(r.avg_interest_rate_pct, pct(r.avg_interest_rate_pct, 2))}${cell(r.agio_pct, pct(r.agio_pct))}${cell(r.dividend_yield_pct, pct(r.dividend_yield_pct, 2))}${cell(r.audit_firm, esc(r.audit_firm ?? '–'))}${cell(r.lead_auditor, esc(r.lead_auditor ?? '–'))}${cell(r.audit_fees, num(r.audit_fees, 2))}${cell(r.non_audit_fees ?? (r.non_audit_fees_approx ? 0 : ''), nonAudit(r))}</tr>`)
     .join('');
   const latest = await all(env, `SELECT n.published_date d,n.title t,n.category c,n.company_id i,c.short_name s FROM news n JOIN company c ON c.id=n.company_id ORDER BY n.published_date DESC LIMIT 6`);
   return layout('Übersicht', 'home', `<h1>Schweizer Immobiliengesellschaften</h1><p class="sub">${rows.length} Gesellschaften, ${rows.filter((r) => r.status === 'active').length} mit Daten</p>
-<div class="card scroll"><table id="t"><tr><th>Gesellschaft</th><th>Portfolio Mio. ▼</th><th>LTV</th><th>Zins</th><th>Agio</th><th>Rendite</th></tr>${body}</table></div>
+<div class="card scroll"><table id="t"><tr><th>Gesellschaft</th><th>Portfolio Mio. ▼</th><th>LTV</th><th>Zins</th><th>Agio</th><th>Rendite</th><th>Revisionsstelle</th><th>Leitender Revisor</th><th>Audit-Honorar Mio.</th><th>Non-Audit Mio.</th></tr>${body}</table></div>
 <p class="sub">Standard: nach Portfoliowert absteigend. Klick auf eine Spaltenüberschrift sortiert.</p>
 <script>${SORT_JS}</script>
 <h2>Neueste News</h2><div class="card news">${latest.map((x) => `<p><span class="d">${dt(x.d)}</span> <span class="tag">${esc(x.c)}</span><a href="/profil/${x.i}">${esc(x.s)}</a>: ${esc(x.t)}</p>`).join('')}</div>`);
@@ -106,6 +113,7 @@ async function profile(env, id) {
   const sh = await all(env, `SELECT * FROM shareholders WHERE company_id=? ORDER BY pct DESC`, id);
   const lp = fins[0];
   const ag = await first(env, `SELECT * FROM v_agio WHERE company_id=?`, id);
+  const aud = await all(env, `SELECT * FROM auditor WHERE company_id=? ORDER BY fiscal_year DESC`, id);
   const kpi = (l, v) => `<div class="kpi"><small>${l}</small><b>${v}</b></div>`;
   const finTable = fins.length
     ? `<div class="card scroll"><table><tr><th></th>${fins.map((f) => `<th>${esc(f.period_label)}</th>`).join('')}</tr>${FIN_ROWS.filter(([, k]) => fins.some((f) => f[k] !== null)).map(([l, k, d]) => `<tr><td>${l}</td>${fins.map((f) => `<td>${num(f[k], d)}</td>`).join('')}</tr>`).join('')}</table><p class="sub">Beträge in Mio. CHF, sofern nicht anders angegeben.</p>${fins.some((f) => f.notes) ? `<details><summary class="sub">Notizen zu den Zahlen</summary>${fins.filter((f) => f.notes).map((f) => `<p class="sub"><b>${esc(f.period_label)}:</b> ${esc(f.notes)}${f.source_url ? ` <a href="${esc(f.source_url)}">Quelle</a>` : ''}</p>`).join('')}</details>` : ''}</div>`
@@ -119,12 +127,13 @@ async function profile(env, id) {
 <h2>Kennzahlen</h2>${finTable}
 <h2>News</h2><div class="card news">${news.length ? news.map((x) => `<p><span class="d">${dt(x.published_date)}</span> <span class="tag">${esc(x.category ?? '')}</span><b>${esc(x.title)}</b></p><p class="sub">${esc(x.summary ?? '')}${x.url ? ` <a href="${esc(x.url)}">Quelle</a>` : ''}</p>`).join('<hr style="border:0;border-top:1px solid var(--bd)">') : '<span class="muted">Keine News erfasst.</span>'}</div>
 <h2>Organe</h2><div class="card">${cur.map((x) => `<p style="margin:3px 0">${esc(x.name)} <span class="sub">· ${esc(x.role)}${x.since ? ' seit ' + esc(String(x.since).slice(0, 10)) : ''}</span></p>`).join('') || '<span class="muted">Keine Angaben.</span>'}${past.length ? `<details><summary class="sub">Ehemalige</summary>${past.map((x) => `<p class="sub" style="margin:3px 0">${esc(x.name)} · ${esc(x.role)} bis ${esc(String(x.until).slice(0, 10))}</p>`).join('')}</details>` : ''}</div>
+${aud.length ? `<h2>Revisionsstelle</h2><div class="card scroll"><table><tr><th></th>${aud.map((x) => `<th>GJ ${esc(x.fiscal_year)}</th>`).join('')}</tr>${[['Revisionsstelle', (x) => esc(x.audit_firm ?? '–')], ['Mandat seit', (x) => esc(x.firm_since ?? '–')], ['Leitender Revisor', (x) => esc(x.lead_auditor ?? '–')], ['Verantwortlich seit GJ', (x) => esc(x.lead_auditor_since_fy ?? '–')], ['Revisionshonorar (Mio. CHF)', (x) => num(x.audit_fees, 2)], ['Non-Audit-Honorar (Mio. CHF)', (x) => nonAudit(x)], ['Non-Audit-Leistungen', (x) => esc(x.non_audit_services ?? '–')], ['Letzte Ausschreibung', (x) => esc(x.last_tender_year ?? '–')]].map(([l, f]) => `<tr><td>${l}</td>${aud.map((x) => `<td>${f(x)}</td>`).join('')}</tr>`).join('')}</table>${aud.filter((x) => x.notes).map((x) => `<p class="sub"><b>GJ ${esc(x.fiscal_year)}:</b> ${esc(x.notes)} ${esc(x.source ?? '')}</p>`).join('')}</div>` : ''}
 ${sh.length ? `<h2>Aktionäre</h2><div class="card scroll"><table>${sh.map((x) => `<tr><td>${esc(x.holder)}</td><td>${num(x.pct, 2)} %</td></tr>`).join('')}</table><p class="sub">${esc(sh[0].source ?? '')}</p></div>` : ''}
 <p class="sub"><a href="/api/company/${id}">JSON</a> · <a href="/vergleich?ids=${id}">Im Vergleich</a></p>`);
 }
 
 async function compareData(env, ids) {
-  let rows = await all(env, `SELECT c.id,v.* FROM v_comparison v JOIN company c ON c.short_name=v.short_name ORDER BY c.short_name`);
+  let rows = await all(env, `SELECT c.id,v.*,a.audit_firm,a.firm_since,a.lead_auditor,a.lead_auditor_since_fy,a.audit_fees,a.non_audit_fees,a.non_audit_fees_approx FROM v_comparison v JOIN company c ON c.short_name=v.short_name LEFT JOIN v_auditor_latest a ON a.company_id=c.id ORDER BY c.short_name`);
   rows = rows.filter((r) => r.fy_label !== null);
   return { rows, picked: ids.length ? rows.filter((r) => ids.includes(r.id)) : rows };
 }
@@ -172,7 +181,7 @@ export default {
         const id = parseInt(m[1], 10);
         const c = await first(env, `SELECT * FROM v_company_profile WHERE id=?`, id);
         if (!c) return json({ error: 'not found' }, 404);
-        return json({ profile: c, financials: await all(env, `SELECT * FROM financials WHERE company_id=? ORDER BY period_end DESC`, id), market: await all(env, `SELECT * FROM market_data WHERE company_id=? ORDER BY as_of DESC`, id), news: await all(env, `SELECT * FROM news WHERE company_id=? ORDER BY published_date DESC`, id), people: await all(env, `SELECT * FROM people WHERE company_id=?`, id), shareholders: await all(env, `SELECT * FROM shareholders WHERE company_id=? ORDER BY pct DESC`, id) });
+        return json({ profile: c, financials: await all(env, `SELECT * FROM financials WHERE company_id=? ORDER BY period_end DESC`, id), market: await all(env, `SELECT * FROM market_data WHERE company_id=? ORDER BY as_of DESC`, id), news: await all(env, `SELECT * FROM news WHERE company_id=? ORDER BY published_date DESC`, id), people: await all(env, `SELECT * FROM people WHERE company_id=?`, id), shareholders: await all(env, `SELECT * FROM shareholders WHERE company_id=? ORDER BY pct DESC`, id), auditor: await all(env, `SELECT * FROM auditor WHERE company_id=? ORDER BY fiscal_year DESC`, id) });
       }
       if (path === '/api/compare') return json((await compareData(env, parseIds(url))).picked);
       return notFound();
