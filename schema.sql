@@ -54,6 +54,15 @@ FROM company c
 LEFT JOIN v_latest_fy fy ON fy.company_id = c.id
 LEFT JOIN v_latest_period lp ON lp.company_id = c.id
 LEFT JOIN v_latest_market mk ON mk.company_id = c.id;
+CREATE VIEW IF NOT EXISTS v_agio AS
+SELECT c.id AS company_id, c.short_name, fy.period_label AS fy_label, fy.period_end AS fy_end,
+  fy.equity AS equity_mio,
+  (SELECT x.shares_outstanding FROM market_data x WHERE x.company_id=c.id AND x.shares_outstanding IS NOT NULL ORDER BY x.as_of DESC LIMIT 1) AS shares_mio,
+  ROUND(fy.equity / NULLIF((SELECT x.shares_outstanding FROM market_data x WHERE x.company_id=c.id AND x.shares_outstanding IS NOT NULL ORDER BY x.as_of DESC LIMIT 1),0), 2) AS nav_ps_calc,
+  (SELECT p.price FROM market_data p WHERE p.company_id=c.id AND p.price IS NOT NULL ORDER BY p.as_of DESC LIMIT 1) AS price,
+  (SELECT p.as_of FROM market_data p WHERE p.company_id=c.id AND p.price IS NOT NULL ORDER BY p.as_of DESC LIMIT 1) AS price_date,
+  ROUND(100.0 * ((SELECT p.price FROM market_data p WHERE p.company_id=c.id AND p.price IS NOT NULL ORDER BY p.as_of DESC LIMIT 1) / NULLIF(fy.equity / NULLIF((SELECT x.shares_outstanding FROM market_data x WHERE x.company_id=c.id AND x.shares_outstanding IS NOT NULL ORDER BY x.as_of DESC LIMIT 1),0),0) - 1), 1) AS agio_pct
+FROM company c LEFT JOIN v_latest_fy fy ON fy.company_id=c.id;
 CREATE VIEW IF NOT EXISTS v_comparison AS
 SELECT c.short_name, c.ticker, c.exchange, fy.period_label AS fy_label,
   fy.rental_income, fy.net_profit, fy.epra_profit, fy.portfolio_value, fy.total_assets, fy.equity_ratio_pct,
@@ -61,7 +70,18 @@ SELECT c.short_name, c.ticker, c.exchange, fy.period_label AS fy_label,
   fy.epra_nav_ps, fy.dividend_ps, mk.price, mk.market_cap,
   ROUND(mk.price / NULLIF(fy.epra_nav_ps,0), 2) AS price_to_nav,
   ROUND(100.0 * fy.dividend_ps / NULLIF(mk.price,0), 2) AS dividend_yield_pct,
-  ROUND(100.0 * fy.epra_eps / NULLIF(mk.price,0), 2) AS epra_earnings_yield_pct
+  ROUND(100.0 * fy.epra_eps / NULLIF(mk.price,0), 2) AS epra_earnings_yield_pct,
+  ag.equity_mio AS equity, ag.shares_mio, ag.nav_ps_calc, ag.agio_pct
 FROM company c
 LEFT JOIN v_latest_fy fy ON fy.company_id = c.id
-LEFT JOIN v_latest_market mk ON mk.company_id = c.id;
+LEFT JOIN v_latest_market mk ON mk.company_id = c.id
+LEFT JOIN v_agio ag ON ag.company_id = c.id;
+CREATE TABLE IF NOT EXISTS auditor (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL REFERENCES company(id) ON DELETE CASCADE,
+  fiscal_year INTEGER NOT NULL,
+  audit_firm TEXT, firm_since INTEGER, lead_auditor TEXT, lead_auditor_since_fy INTEGER,
+  audit_fees REAL, non_audit_fees REAL, non_audit_services TEXT, last_tender_year INTEGER,
+  source TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (company_id, fiscal_year)
+);

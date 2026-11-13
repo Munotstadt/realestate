@@ -57,6 +57,10 @@ const CMP_ROWS = [
   ['WALT (Jahre)', (r) => num(r.walt_years, 1)],
   ['NAV je Aktie (CHF)', (r) => num(r.epra_nav_ps, 2)],
   ['Dividende je Aktie (CHF)', (r) => num(r.dividend_ps, 2)],
+  ['Eigenkapital ohne Minderheiten (Mio.)', (r) => num(r.equity, 1)],
+  ['Anzahl Aktien (Mio.)', (r) => num(r.shares_mio, 3)],
+  ['NAV je Aktie berechnet (EK / Aktien, CHF)', (r) => num(r.nav_ps_calc, 2)],
+  ['Agio / Disagio auf NAV', (r) => pct(r.agio_pct)],
   ['Kurs / NAV', (r) => num(r.price_to_nav, 2)],
   ['Ausschüttungsrendite', (r) => pct(r.dividend_yield_pct, 2)],
 ];
@@ -70,13 +74,13 @@ const FIN_ROWS = [
 ];
 
 async function home(env) {
-  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.price_to_nav,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (c.status='active') DESC, c.short_name`);
+  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.price_to_nav,v.agio_pct,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (c.status='active') DESC, c.short_name`);
   const body = rows
-    .map((r) => `<tr><td><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td><td>${num(r.portfolio_value, 0)}</td><td>${pct(r.ltv_pct)}</td><td>${pct(r.avg_interest_rate_pct, 2)}</td><td>${num(r.price_to_nav, 2)}</td><td>${pct(r.dividend_yield_pct, 2)}</td></tr>`)
+    .map((r) => `<tr><td><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td><td>${num(r.portfolio_value, 0)}</td><td>${pct(r.ltv_pct)}</td><td>${pct(r.avg_interest_rate_pct, 2)}</td><td>${num(r.price_to_nav, 2)}</td><td>${pct(r.agio_pct)}</td><td>${pct(r.dividend_yield_pct, 2)}</td></tr>`)
     .join('');
   const latest = await all(env, `SELECT n.published_date d,n.title t,n.category c,n.company_id i,c.short_name s FROM news n JOIN company c ON c.id=n.company_id ORDER BY n.published_date DESC LIMIT 6`);
   return layout('Übersicht', 'home', `<h1>Schweizer Immobiliengesellschaften</h1><p class="sub">${rows.length} Gesellschaften, ${rows.filter((r) => r.status === 'active').length} mit Daten</p>
-<div class="card scroll"><table><tr><th>Gesellschaft</th><th>Portfolio Mio.</th><th>LTV</th><th>Zins</th><th>P/NAV</th><th>Rendite</th></tr>${body}</table></div>
+<div class="card scroll"><table><tr><th>Gesellschaft</th><th>Portfolio Mio.</th><th>LTV</th><th>Zins</th><th>P/NAV</th><th>Agio</th><th>Rendite</th></tr>${body}</table></div>
 <h2>Neueste News</h2><div class="card news">${latest.map((x) => `<p><span class="d">${dt(x.d)}</span> <span class="tag">${esc(x.c)}</span><a href="/profil/${x.i}">${esc(x.s)}</a>: ${esc(x.t)}</p>`).join('')}</div>`);
 }
 
@@ -90,6 +94,7 @@ async function profile(env, id) {
   const people = await all(env, `SELECT * FROM people WHERE company_id=? ORDER BY (until IS NOT NULL), role`, id);
   const sh = await all(env, `SELECT * FROM shareholders WHERE company_id=? ORDER BY pct DESC`, id);
   const lp = fins[0];
+  const ag = await first(env, `SELECT * FROM v_agio WHERE company_id=?`, id);
   const kpi = (l, v) => `<div class="kpi"><small>${l}</small><b>${v}</b></div>`;
   const finTable = fins.length
     ? `<div class="card scroll"><table><tr><th></th>${fins.map((f) => `<th>${esc(f.period_label)}</th>`).join('')}</tr>${FIN_ROWS.filter(([, k]) => fins.some((f) => f[k] !== null)).map(([l, k, d]) => `<tr><td>${l}</td>${fins.map((f) => `<td>${num(f[k], d)}</td>`).join('')}</tr>`).join('')}</table><p class="sub">Beträge in Mio. CHF, sofern nicht anders angegeben.</p>${fins.some((f) => f.notes) ? `<details><summary class="sub">Notizen zu den Zahlen</summary>${fins.filter((f) => f.notes).map((f) => `<p class="sub"><b>${esc(f.period_label)}:</b> ${esc(f.notes)}${f.source_url ? ` <a href="${esc(f.source_url)}">Quelle</a>` : ''}</p>`).join('')}</details>` : ''}</div>`
@@ -98,8 +103,8 @@ async function profile(env, id) {
   return layout(c.short_name, '', `<div class="card"><div class="row"><div><h1>${esc(c.short_name)}</h1><div class="sub">${esc([c.ticker, c.exchange, c.hq].filter(Boolean).join(' · '))}</div></div>
 <div style="text-align:right"><b style="font-size:18px;font-weight:500">${mk ? 'CHF ' + num(mk.price, 2) : '–'}</b><div class="sub">${mk ? 'Kurs ' + dt(mk.as_of) : ''}</div></div></div>
 <p class="sub" style="margin:8px 0 0">${esc(c.description ?? c.focus ?? '')}</p>
-<div class="grid" style="margin-top:12px">${kpi('Portfoliowert', lp ? num(lp.portfolio_value, 1) + ' Mio.' : '–')}${kpi('LTV', lp ? pct(p?.latest_ltv ?? lp.ltv_pct) : '–')}${kpi('Ø Zinssatz', p?.fy_interest != null ? pct(p.fy_interest, 2) : '–')}${kpi('Leerstand', lp ? pct(lp.vacancy_rate_pct) : '–')}</div>
-<p class="sub" style="margin:8px 0 0">Stand: ${lp ? esc(lp.period_label) : '–'}${mk && mk.market_cap ? ' · Marktkap. ' + num(mk.market_cap, 0) + ' Mio.' : ''}${mk && mk.target_price ? ' · Kursziel ' + num(mk.target_price, 0) : ''}</p></div>
+<div class="grid" style="margin-top:12px">${kpi('Portfoliowert', lp ? num(lp.portfolio_value, 1) + ' Mio.' : '–')}${kpi('LTV', lp ? pct(p?.latest_ltv ?? lp.ltv_pct) : '–')}${kpi('Ø Zinssatz', p?.fy_interest != null ? pct(p.fy_interest, 2) : '–')}${kpi('Leerstand', lp ? pct(lp.vacancy_rate_pct) : '–')}${kpi('Agio auf NAV', ag?.agio_pct != null ? pct(ag.agio_pct) : '–')}</div>
+<p class="sub" style="margin:8px 0 0">Stand: ${lp ? esc(lp.period_label) : '–'}${mk && mk.market_cap ? ' · Marktkap. ' + num(mk.market_cap, 0) + ' Mio.' : ''}${mk && mk.target_price ? ' · Kursziel ' + num(mk.target_price, 0) : ''}${ag?.nav_ps_calc != null ? ` · NAV/Aktie ${num(ag.nav_ps_calc, 2)} (EK ${num(ag.equity_mio, 1)} Mio. / ${num(ag.shares_mio, 3)} Mio. Aktien)` : ''}</p></div>
 <h2>Kennzahlen</h2>${finTable}
 <h2>News</h2><div class="card news">${news.length ? news.map((x) => `<p><span class="d">${dt(x.published_date)}</span> <span class="tag">${esc(x.category ?? '')}</span><b>${esc(x.title)}</b></p><p class="sub">${esc(x.summary ?? '')}${x.url ? ` <a href="${esc(x.url)}">Quelle</a>` : ''}</p>`).join('<hr style="border:0;border-top:1px solid var(--bd)">') : '<span class="muted">Keine News erfasst.</span>'}</div>
 <h2>Organe</h2><div class="card">${cur.map((x) => `<p style="margin:3px 0">${esc(x.name)} <span class="sub">· ${esc(x.role)}${x.since ? ' seit ' + esc(String(x.since).slice(0, 10)) : ''}</span></p>`).join('') || '<span class="muted">Keine Angaben.</span>'}${past.length ? `<details><summary class="sub">Ehemalige</summary>${past.map((x) => `<p class="sub" style="margin:3px 0">${esc(x.name)} · ${esc(x.role)} bis ${esc(String(x.until).slice(0, 10))}</p>`).join('')}</details>` : ''}</div>
