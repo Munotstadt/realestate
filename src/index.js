@@ -72,14 +72,26 @@ const FIN_ROWS = [
   ['Hypotheken', 'mortgages', 1], ['LTV %', 'ltv_pct', 1], ['Ø Zinssatz %', 'avg_interest_rate_pct', 2], ['NAV je Aktie (CHF)', 'epra_nav_ps', 2], ['Dividende (CHF)', 'dividend_ps', 2],
 ];
 
+const SORT_JS = `(function(){var t=document.getElementById('t');if(!t)return;var h=t.rows[0],asc={1:false};
+function sort(i){asc[i]=asc[i]===undefined?(i===0):!asc[i];var up=asc[i],rs=[].slice.call(t.rows,1);
+rs.sort(function(a,b){var x=a.cells[i].dataset.v,y=b.cells[i].dataset.v;if(x===''&&y==='')return 0;if(x==='')return 1;if(y==='')return -1;
+var nx=parseFloat(x),ny=parseFloat(y),r=(isNaN(nx)||isNaN(ny))?x.localeCompare(y,'de'):nx-ny;return up?r:-r});
+rs.forEach(function(r){r.parentNode.appendChild(r)});
+for(var j=0;j<h.cells.length;j++)h.cells[j].textContent=h.cells[j].textContent.replace(/ [▲▼]$/,'');
+h.cells[i].textContent+=up?' ▲':' ▼';}
+for(var i=0;i<h.cells.length;i++)(function(i){h.cells[i].style.cursor='pointer';h.cells[i].onclick=function(){sort(i)}})(i);})();`;
+
 async function home(env) {
-  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.agio_pct,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (c.status='active') DESC, c.short_name`);
+  const rows = await all(env, `SELECT c.id,c.short_name,c.ticker,c.status,c.focus,v.fy_label,v.portfolio_value,v.ltv_pct,v.avg_interest_rate_pct,v.agio_pct,v.dividend_yield_pct FROM company c LEFT JOIN v_comparison v ON v.short_name=c.short_name ORDER BY (v.portfolio_value IS NULL), v.portfolio_value DESC, c.short_name`);
+  const cell = (v, f) => `<td data-v="${v ?? ''}">${f}</td>`;
   const body = rows
-    .map((r) => `<tr><td><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td><td>${num(r.portfolio_value, 0)}</td><td>${pct(r.ltv_pct)}</td><td>${pct(r.avg_interest_rate_pct, 2)}</td><td>${pct(r.agio_pct)}</td><td>${pct(r.dividend_yield_pct, 2)}</td></tr>`)
+    .map((r) => `<tr><td data-v="${esc(r.short_name)}"><a href="/profil/${r.id}">${esc(r.short_name)}</a><div class="sub">${esc(r.ticker ?? '')}${r.status !== 'active' ? ' · <span class="muted">noch zu recherchieren</span>' : ''}</div></td>${cell(r.portfolio_value, num(r.portfolio_value, 0))}${cell(r.ltv_pct, pct(r.ltv_pct))}${cell(r.avg_interest_rate_pct, pct(r.avg_interest_rate_pct, 2))}${cell(r.agio_pct, pct(r.agio_pct))}${cell(r.dividend_yield_pct, pct(r.dividend_yield_pct, 2))}</tr>`)
     .join('');
   const latest = await all(env, `SELECT n.published_date d,n.title t,n.category c,n.company_id i,c.short_name s FROM news n JOIN company c ON c.id=n.company_id ORDER BY n.published_date DESC LIMIT 6`);
   return layout('Übersicht', 'home', `<h1>Schweizer Immobiliengesellschaften</h1><p class="sub">${rows.length} Gesellschaften, ${rows.filter((r) => r.status === 'active').length} mit Daten</p>
-<div class="card scroll"><table><tr><th>Gesellschaft</th><th>Portfolio Mio.</th><th>LTV</th><th>Zins</th><th>Agio</th><th>Rendite</th></tr>${body}</table></div>
+<div class="card scroll"><table id="t"><tr><th>Gesellschaft</th><th>Portfolio Mio. ▼</th><th>LTV</th><th>Zins</th><th>Agio</th><th>Rendite</th></tr>${body}</table></div>
+<p class="sub">Standard: nach Portfoliowert absteigend. Klick auf eine Spaltenüberschrift sortiert.</p>
+<script>${SORT_JS}</script>
 <h2>Neueste News</h2><div class="card news">${latest.map((x) => `<p><span class="d">${dt(x.d)}</span> <span class="tag">${esc(x.c)}</span><a href="/profil/${x.i}">${esc(x.s)}</a>: ${esc(x.t)}</p>`).join('')}</div>`);
 }
 
