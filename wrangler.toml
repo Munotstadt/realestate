@@ -1,0 +1,13 @@
+name = "realestate"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+routes = [
+  { pattern = "realestate.munot.app", custom_domain = true }
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "realestate"
+database_id = "3aab58d0-1af8-4ed8-91e9-431d1bb91848"
