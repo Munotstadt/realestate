@@ -1,7 +1,8 @@
 name = "realestate"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
-workers_dev = true
+workers_dev = false
+preview_urls = false
 
 routes = [
   { pattern = "realestate.munot.app", custom_domain = true }
